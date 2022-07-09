@@ -1,4 +1,6 @@
-from rest_framework import views, generics, status, serializers
+from django.contrib.auth.decorators import permission_required
+from django.utils.decorators import method_decorator
+from rest_framework import views, generics, status, serializers, permissions
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 from .serializers import WorkflowContentSerializer, ExecuteCheckSerializer, \
@@ -6,7 +8,7 @@ from .serializers import WorkflowContentSerializer, ExecuteCheckSerializer, \
     WorkflowLogSerializer, WorkflowLogListSerializer, AuditWorkflowSerializer, ExecuteWorkflowSerializer
 from .pagination import CustomizedPagination
 from .filters import WorkflowFilter, WorkflowAuditFilter
-from sql.models import SqlWorkflow, SqlWorkflowContent, Instance, WorkflowAudit, Users, WorkflowLog, ArchiveConfig
+from sql.models import SqlWorkflow, SqlWorkflowContent, WorkflowAudit, Users, WorkflowLog, ArchiveConfig
 from sql.utils.sql_review import can_cancel, can_execute, on_correct_time_period
 from sql.utils.resource_group import user_groups
 from sql.utils.workflow_audit import Audit
@@ -27,17 +29,18 @@ logger = logging.getLogger('default')
 
 
 class ExecuteCheck(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
     @extend_schema(summary="SQL检查",
                    request=ExecuteCheckSerializer,
                    responses={200: ExecuteCheckResultSerializer},
                    description="对提供的SQL进行语法检查")
+    @method_decorator(permission_required('sql.sql_submit', raise_exception=True))
     def post(self, request):
         # 参数验证
         serializer = ExecuteCheckSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        instance = Instance.objects.get(pk=request.data['instance_id'])
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.get_instance()
         check_engine = get_engine(instance=instance)
         check_result = check_engine.execute_check(db_name=request.data['db_name'],
                                                   sql=request.data['full_sql'].strip())
@@ -53,6 +56,8 @@ class WorkflowList(generics.ListAPIView):
     """
     列出所有的workflow或者提交一条新的workflow
     """
+    permission_classes = [permissions.IsAuthenticated]
+
     filterset_class = WorkflowFilter
     pagination_class = CustomizedPagination
     serializer_class = WorkflowContentSerializer
@@ -75,12 +80,12 @@ class WorkflowList(generics.ListAPIView):
                    request=WorkflowContentSerializer,
                    responses={201: WorkflowContentSerializer},
                    description="提交一条SQL上线工单")
+    @method_decorator(permission_required('sql.sql_submit', raise_exception=True))
     def post(self, request):
-        serializer = WorkflowContentSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class WorkflowAuditList(generics.ListAPIView):
