@@ -61,7 +61,24 @@ class WorkflowList(generics.ListAPIView):
     filterset_class = WorkflowFilter
     pagination_class = CustomizedPagination
     serializer_class = WorkflowContentSerializer
-    queryset = SqlWorkflowContent.objects.all().select_related('workflow').order_by('-id')
+
+    def get_queryset(self):
+        """
+        1、非管理员，拥有审核权限、资源组粒度执行权限的，可以查看组内所有工单
+        2、管理员，审计员，可查看所有工单
+        """
+        filter_dict = {}
+        user = self.request.user
+        # 管理员，审计员，可查看所有工单
+        if user.is_superuser or user.has_perm('sql.audit_user'):
+            pass
+        # 非管理员，拥有审核权限、资源组粒度执行权限的，可以查看组内所有工单
+        elif user.has_perm('sql.sql_review') or user.has_perm('sql.sql_execute_for_resource_group'):
+            filter_dict['group_id__in'] = [group.group_id for group in user_groups(user)]
+        # 其他人只能查看自己提交的工单
+        else:
+            filter_dict['engineer'] = user.username
+        return SqlWorkflowContent.objects.filter(**filter_dict).select_related('workflow').order_by('-id')
 
     @extend_schema(summary="SQL上线工单清单",
                    request=WorkflowContentSerializer,
