@@ -319,13 +319,15 @@ class TestWorkflow(APITestCase):
         self.ins_tag = InstanceTag.objects.create(tag_code='can_write', active=1)
         self.wfs = WorkflowAuditSetting.objects.create(group_id=self.res_group.group_id,
                                                        workflow_type=2, audit_auth_groups=self.group.id)
+        can_submit = Permission.objects.get(codename='sql_submit')
         can_execute_permission = Permission.objects.get(codename='sql_execute')
         can_execute_resource_permission = Permission.objects.get(codename='sql_execute_for_resource_group')
         can_review_permission = Permission.objects.get(codename='sql_review')
         self.user = User(username='test_user', display='测试用户', is_active=True)
         self.user.set_password('test_password')
         self.user.save()
-        self.user.user_permissions.add(can_execute_permission, can_execute_resource_permission, can_review_permission)
+        self.user.user_permissions.add(
+            can_submit, can_execute_permission, can_execute_resource_permission, can_review_permission)
         self.user.groups.add(self.group.id)
         self.user.resource_group.add(self.res_group.group_id)
         self.ins = Instance.objects.create(instance_name='some_ins', type='slave', db_type='redis',
